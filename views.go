@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func BookView(res http.ResponseWriter, req *http.Request) {
@@ -23,13 +24,17 @@ func BookView(res http.ResponseWriter, req *http.Request) {
 		rndr.JSON(res, http.StatusOK, result)
 
 	case "POST":
-		posted_book := make(map[string]interface{})
-		data, err := ioutil.ReadAll(req.Body)
-		json.Unmarshal(data, &posted_book)
+		data := make(map[string]interface{})
+		posted_book, err := ioutil.ReadAll(req.Body)
+		json.Unmarshal(posted_book, &data)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(posted_book["message"])
+		bookName := data["book_name"].(string)
+		author := data["author"].(string)
+		book := utils.BookStruct{BookName: bookName, Author: author, Views: 0, Timestamp: int(time.Now().Unix())}
+		utils.WriteBook(book)
+		rndr.JSON(res, http.StatusCreated, book)
 	}
 }
 
