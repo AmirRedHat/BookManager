@@ -141,6 +141,7 @@ func (s *Store) storeReadUser(pk int) []UserStruct {
 }
 
 func (s *Store) authPassword(email string, encryptedPassword string) UserStruct {
+	read_fields_str := "id, username, email"
 	s.path = path
 	s.dbtype = dbtype
 	database, dberr := sql.Open(s.dbtype, s.path)
@@ -148,8 +149,7 @@ func (s *Store) authPassword(email string, encryptedPassword string) UserStruct 
 		log.Fatal(dberr)
 	}
 
-	query := fmt.Sprintf(auth_user_query, encryptedPassword)
-	database.Query(query)
+	query := fmt.Sprintf(auth_user_query, read_fields_str, encryptedPassword)
 	results, dberr := database.Query(query)
 	if dberr != nil {
 		log.Fatal(dberr)
@@ -191,5 +191,6 @@ func ReadUser(pk int) []UserStruct {
 }
 
 func AuthUser(email string, encryptedPassword string) UserStruct {
-	return AuthUser(email, encryptedPassword)
+	store := Store{}
+	return store.authPassword(email, encryptedPassword)
 }

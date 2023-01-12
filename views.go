@@ -39,7 +39,6 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	switch method {
-
 	case "GET":
 		user_id := req.URL.Query().Get("pk")
 		id, err := strconv.Atoi(user_id)
@@ -51,7 +50,7 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 
 	case "POST":
 
-		if path == "/register" {
+		if path == "/user/register" {
 			fmt.Println("registering...")
 			posted_data, err := ioutil.ReadAll(req.Body)
 			if err != nil {
@@ -62,11 +61,11 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 			user_name := data["username"].(string)
 			user_email := data["email"].(string)
 			password := data["password"].(string)
-			fmt.Println(user_name, user_email, password)
-			//user := utils.UserStruct{Username: user_name, Email: user_email, Password: password}
-			//utils.WriteUser(user)
+			user := utils.UserStruct{Username: user_name, Email: user_email, Password: password}
+			utils.WriteUser(user)
+			rndr.JSON(res, http.StatusCreated, user)
 
-		} else if path == "/login" {
+		} else if path == "/user/login" {
 
 			postedData, _ := ioutil.ReadAll(req.Body)
 			data := make(map[string]interface{})
@@ -77,10 +76,7 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 			email := data["email"].(string)
 			encryptedPassword := utils.Encrypt(data["password"].(string))
 			user := utils.AuthUser(email, encryptedPassword)
-			errJson := rndr.JSON(res, http.StatusOK, user)
-			if errJson != nil {
-				fmt.Fprint(res, errJson)
-			}
+			rndr.JSON(res, http.StatusOK, user)
 		}
 	}
 
