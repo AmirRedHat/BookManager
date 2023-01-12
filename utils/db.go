@@ -1,41 +1,41 @@
 package utils
 
 import (
-	"fmt"
+	"crypto/sha256"
 	"database/sql"
+	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
-	"crypto/sha256"
 )
 
-
 const (
-	dbtype = "sqlite3";
-	path = "./db.sqlite3";
-	write_book_query = "INSERT INTO book VALUES ($1, $2, $3, $4)";
-	write_user_query = "INSERT INTO user (username, email, password) VALUES (&1, $2, $3)";
-	read_book_query = "SELECT %s FROM book WHERE book_name='%s'";
-	read_user_query = "SELECT %s FROM user WHERE id=%d";
-	read_all_book_query = "SELECT %s FROM book";
-	read_all_user_query = "SELECT %s FROM user";
+	dbtype              = "sqlite3"
+	path                = "./db.sqlite3"
+	write_book_query    = "INSERT INTO book VALUES ($1, $2, $3, $4)"
+	write_user_query    = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
+	read_book_query     = "SELECT %s FROM book WHERE book_name='%s'"
+	read_user_query     = "SELECT %s FROM user WHERE id=%d"
+	auth_user_query     = "SELECT %s FROM user WHERE password='%s'"
+	read_all_book_query = "SELECT %s FROM book"
+	read_all_user_query = "SELECT %s FROM user"
 )
 
 type Store struct {
-	path string 
+	path   string
 	dbtype string
 }
 
 type BookStruct struct {
-	Book_name string 
-	Author string 
-	Views int 
+	BookName  string
+	Author    string
+	Views     int
 	Timestamp int
 }
 
 type UserStruct struct {
-	ID int
-	Username string 
-	Email string 
+	ID       int
+	Username string
+	Email    string
 	Password string
 }
 
@@ -43,47 +43,51 @@ func Encrypt(str string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(str)))
 }
 
-func (user *UserStruct) EncryptPassword() {
-	current_password := user.Password 
-	encrypted_password := Encrypt(current_password)
-	user.Password = encrypted_password
+func (user *UserStruct) encryptPassword() {
+	currentPassword := user.Password
+	encryptedPassword := Encrypt(currentPassword)
+	user.Password = encryptedPassword
 }
 
-
-func (s *Store) StoreWriteBook(book BookStruct) {
+func (s *Store) storeWriteBook(book BookStruct) {
 	s.path = path
 	s.dbtype = dbtype
-	database, dberr := sql.Open(s.dbtype, s.path);
-	if dberr != nil{
-		log.Fatal(dberr);
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
-	database.Exec(write_book_query, book.Book_name, book.Author, book.Views, book.Timestamp);
-	database.Close();
+	_, err := database.Exec(write_book_query, book.BookName, book.Author, book.Views, book.Timestamp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	closeErr := database.Close()
+	if closeErr != nil {
+		log.Fatal(closeErr)
+	}
 }
 
-
-func (s *Store) StoreReadBook(book_name string) []BookStruct {
+func (s *Store) storeReadBook(book_name string) []BookStruct {
 	s.path = path
 	s.dbtype = dbtype
-	database, dberr := sql.Open(s.dbtype, s.path);
-	if dberr != nil{
-		log.Fatal(dberr);
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
 	query := fmt.Sprintf(read_all_book_query, "*")
 	if book_name != "all" {
 		query = fmt.Sprintf(read_book_query, "*", book_name)
 	}
-	
+
 	results, dberr := database.Query(query)
-	if dberr != nil{
-		log.Fatal(dberr);
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
 
-	book_arr := make([]BookStruct, 0);
-	for results.Next(){
+	book_arr := make([]BookStruct, 0)
+	for results.Next() {
 		temp_book_struct := BookStruct{}
-		scanerr := results.Scan(&temp_book_struct.Book_name, &temp_book_struct.Author, &temp_book_struct.Views, &temp_book_struct.Timestamp)
-		if scanerr != nil{
+		scanerr := results.Scan(&temp_book_struct.BookName, &temp_book_struct.Author, &temp_book_struct.Views, &temp_book_struct.Timestamp)
+		if scanerr != nil {
 			log.Fatal(scanerr)
 		}
 		book_arr = append(book_arr, temp_book_struct)
@@ -92,38 +96,38 @@ func (s *Store) StoreReadBook(book_name string) []BookStruct {
 	return book_arr
 }
 
-func (s *Store) StoreWriteUser(user UserStruct) {
+func (s *Store) storeWriteUser(user UserStruct) {
 	s.path = path
 	s.dbtype = dbtype
-	database, dberr := sql.Open(s.dbtype, s.path);
-	if dberr != nil{
-		log.Fatal(dberr);
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
 
 	// encrypt user password
-	user.EncryptPassword()
+	user.encryptPassword()
 
-	database.Exec(write_user_query, user.Username, user.Email, user.Password);
-	database.Close();
+	database.Exec(write_user_query, user.Username, user.Email, user.Password)
+	database.Close()
 }
 
-func (s *Store) StoreReadUser(pk int) []UserStruct {
-	read_fields_str := "(id, username, email)"
+func (s *Store) storeReadUser(pk int) []UserStruct {
+	read_fields_str := "id, username, email"
 	s.path = path
 	s.dbtype = dbtype
-	database, dberr := sql.Open(s.dbtype, s.path);
-	if dberr != nil{
-		log.Fatal(dberr);
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
 	// creating query
 	query := fmt.Sprintf(read_all_user_query, read_fields_str)
 	if pk != 0 {
 		query = fmt.Sprintf(read_user_query, read_fields_str, pk)
 	}
-	
+
 	results, dberr := database.Query(query)
-	if dberr != nil{
-		log.Fatal(dberr);
+	if dberr != nil {
+		log.Fatal(dberr)
 	}
 
 	user_arr := make([]UserStruct, 0)
@@ -136,16 +140,56 @@ func (s *Store) StoreReadUser(pk int) []UserStruct {
 	return user_arr
 }
 
+func (s *Store) authPassword(email string, encryptedPassword string) UserStruct {
+	s.path = path
+	s.dbtype = dbtype
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		log.Fatal(dberr)
+	}
+
+	query := fmt.Sprintf(auth_user_query, encryptedPassword)
+	database.Query(query)
+	results, dberr := database.Query(query)
+	if dberr != nil {
+		log.Fatal(dberr)
+	}
+
+	targetUser := UserStruct{}
+	for results.Next() {
+		tempUser := UserStruct{}
+		results.Scan(&tempUser.ID, &tempUser.Username, &tempUser.Email)
+		if tempUser.Email == email {
+			targetUser = tempUser
+			break
+		}
+	}
+
+	return targetUser
+}
 
 func WriteBook(book BookStruct) {
 	// the middle of saving book
 	store := Store{}
-	store.StoreWriteBook(book)
+	store.storeWriteBook(book)
 }
 
 func ReadBook(book_name string) []BookStruct {
 	// the middle of reading book
 	store := Store{}
-	result := store.StoreReadBook(book_name)
-	return result
+	return store.storeReadBook(book_name)
+}
+
+func WriteUser(user UserStruct) {
+	store := Store{}
+	store.storeWriteUser(user)
+}
+
+func ReadUser(pk int) []UserStruct {
+	store := Store{}
+	return store.storeReadUser(pk)
+}
+
+func AuthUser(email string, encryptedPassword string) UserStruct {
+	return AuthUser(email, encryptedPassword)
 }

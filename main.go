@@ -1,17 +1,24 @@
-package main 
+package main
 
 import (
-	"localPackage/utils"
-	"net/http"
-	"log"
 	"fmt"
+	"localPackage/utils"
+	"log"
+	"net/http"
 )
+
+func controller() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/book", BookView)
+	mux.HandleFunc("/user", UserView)
+}
 
 func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/book", BookView)
-	
+	mux.HandleFunc("/user", UserView)
+
 	fmt.Println("running server on 0.0.0.0:9090")
 	serveerr := http.ListenAndServe("0.0.0.0:9090", mux)
 	if serveerr != nil {
@@ -19,5 +26,6 @@ func main() {
 	}
 
 	fmt.Println(utils.Entcrypt("python"))
-	// result := utils.ReadBook("bookName1")
+	result := utils.ReadUser(1)
+	fmt.Println(result)
 }
