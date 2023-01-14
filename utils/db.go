@@ -4,25 +4,50 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
+	"strconv"
 )
 
 const (
-	dbtype              = "sqlite3"
-	path                = "./db.sqlite3"
-	write_book_query    = "INSERT INTO book VALUES ($1, $2, $3, $4)"
-	write_user_query    = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
-	read_book_query     = "SELECT %s FROM book WHERE book_name='%s'"
-	read_user_query     = "SELECT %s FROM user WHERE id=%d"
-	auth_user_query     = "SELECT %s FROM user WHERE password='%s'"
-	read_all_book_query = "SELECT %s FROM book"
-	read_all_user_query = "SELECT %s FROM user"
+	dbtype                 = "sqlite3"
+	path                   = "./db.sqlite3"
+	write_book_query       = "INSERT INTO book VALUES ($1, $2, $3, $4)"
+	write_user_query       = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
+	write_user_token_query = "INSERT INTO user_token (token, email, time) VALUES (:token, :email, :time)"
+	read_book_query        = "SELECT %s FROM book WHERE book_name='%s'"
+	read_user_query        = "SELECT %s FROM user WHERE id=%d"
+	auth_user_query        = "SELECT %s FROM user WHERE password='%s'"
+	read_all_book_query    = "SELECT %s FROM book"
+	read_all_user_query    = "SELECT %s FROM user"
 )
 
 type Store struct {
 	path   string
 	dbtype string
+}
+
+func (s *Store) returnDB() (*sql.DB, error) {
+	s.path = path
+	s.dbtype = dbtype
+	database, dberr := sql.Open(s.dbtype, s.path)
+	if dberr != nil {
+		return nil, dberr
+	}
+	return database, nil
+}
+
+func (s *Store) returnNewDB() *sqlx.DB {
+	s.path = path
+	s.dbtype = dbtype
+	database, err := sqlx.Connect(s.dbtype, s.path)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return database
 }
 
 type BookStruct struct {
@@ -39,14 +64,26 @@ type UserStruct struct {
 	Password string
 }
 
+type UserTokenStruct struct {
+	Token      string `db:"token"`
+	Email      string `db:"email"`
+	ExpireTime int    `db:"time"`
+}
+
 func Encrypt(str string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(str)))
 }
 
+// ---------------------------- UserStruct methods
 func (user *UserStruct) encryptPassword() {
 	currentPassword := user.Password
 	encryptedPassword := Encrypt(currentPassword)
 	user.Password = encryptedPassword
+}
+
+// ---------------------------- UserTokenStruct methods
+func (userToken *UserTokenStruct) encryptToken() {
+	userToken.Token = Encrypt(fmt.Sprintf("%s%s", userToken.Email, strconv.Itoa(userToken.ExpireTime)))
 }
 
 func (s *Store) storeWriteBook(book BookStruct) {
@@ -103,10 +140,8 @@ func (s *Store) storeWriteUser(user UserStruct) {
 	if dberr != nil {
 		log.Fatal(dberr)
 	}
-
 	// encrypt user password
 	user.encryptPassword()
-
 	database.Exec(write_user_query, user.Username, user.Email, user.Password)
 	database.Close()
 }
@@ -168,6 +203,14 @@ func (s *Store) authPassword(email string, encryptedPassword string) UserStruct 
 	return targetUser
 }
 
+func (s *Store) StoreWriteUserToken(userToken UserTokenStruct) UserTokenStruct {
+	db := s.returnNewDB()
+	// encrypt token
+	userToken.encryptToken()
+	db.NamedExec(write_user_token_query, userToken)
+	return userToken
+}
+
 func WriteBook(book BookStruct) {
 	// the middle of saving book
 	store := Store{}
@@ -193,4 +236,9 @@ func ReadUser(pk int) []UserStruct {
 func AuthUser(email string, encryptedPassword string) UserStruct {
 	store := Store{}
 	return store.authPassword(email, encryptedPassword)
+}
+
+func WriteUserToken(userToken UserTokenStruct) UserTokenStruct {
+	store := Store{}
+	return store.StoreWriteUserToken(userToken)
 }

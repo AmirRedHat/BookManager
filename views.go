@@ -86,3 +86,23 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 	}
 
 }
+
+func UserTokenView(res http.ResponseWriter, req *http.Request) {
+	rndr := renderer.New()
+	method := req.Method
+	path := req.URL.Path
+	fmt.Println(method, path)
+
+	if method == "POST" {
+		if path == "/user/token/access" {
+			fmt.Println("return access token")
+		} else if path == "/user/token/auth" {
+			fmt.Println("checking auth methods with token")
+		}
+	} else if method == "GET" {
+		fmt.Println("return user")
+	}
+
+	rndr.JSON(res, http.StatusOK, "it is fun")
+
+}
