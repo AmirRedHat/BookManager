@@ -69,17 +69,28 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 			userName := data["username"].(string)
 			userEmail := data["email"].(string)
 			password := data["password"].(string)
+			responseData := make(map[string]interface{})
 			user := utils.UserStruct{Username: userName, Email: userEmail, Password: password}
 			utils.WriteUser(user)
-			rndr.JSON(res, http.StatusCreated, user)
+
+			exTime := int(time.Now().Add(30 * time.Minute).Unix())
+			token := ""
+			userToken := utils.UserTokenStruct{Token: token, Email: userEmail, ExpireTime: exTime}
+			userToken = utils.WriteUserToken(userToken)
+
+			responseData["user"] = user
+			responseData["token"] = userToken
+			rndr.JSON(res, http.StatusCreated, responseData)
 
 		} else if path == "/user/login" {
 
 			data := returnData(req)
 			email := data["email"].(string)
-			encryptedPassword := utils.Encrypt(data["password"].(string))
-			user := utils.AuthUser(email, encryptedPassword)
-			rndr.JSON(res, http.StatusOK, user)
+			exTime := int(time.Now().Add(30 * time.Minute).Unix())
+			token := ""
+			userToken := utils.UserTokenStruct{Token: token, Email: email, ExpireTime: exTime}
+			userToken = utils.WriteUserToken(userToken)
+			rndr.JSON(res, http.StatusOK, userToken)
 
 		} else if path == "/user/logout" {
 			data := returnData(req)
@@ -91,29 +102,29 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 
 }
 
-func UserTokenView(res http.ResponseWriter, req *http.Request) {
-	rndr := renderer.New()
-	method := req.Method
-	path := req.URL.Path
-	data := returnData(req)
-
-	if method == "POST" {
-		if path == "/user/token/access" || path == "/user/token/" {
-			email := data["email"].(string)
-			time := int(time.Now().Unix())
-			token := ""
-			userToken := utils.UserTokenStruct{Token: token, Email: email, ExpireTime: time}
-			userToken = utils.WriteUserToken(userToken)
-
-		} else if path == "/user/token/auth" {
-			email := data["email"].(string)
-			token := data["token"].(string)
-			userToken := utils.AuthToken(email, token)
-			status := http.StatusOK
-			if userToken.Email == "" {
-				status = http.StatusUnauthorized
-			}
-			rndr.JSON(res, status, userToken)
-		}
-	}
-}
+//func UserTokenView(res http.ResponseWriter, req *http.Request) {
+//	rndr := renderer.New()
+//	method := req.Method
+//	path := req.URL.Path
+//	data := returnData(req)
+//
+//	if method == "POST" {
+//		if path == "/user/token/access" || path == "/user/token/" {
+//			email := data["email"].(string)
+//			exTime := int(time.Now().Add(30 * time.Minute).Unix())
+//			token := ""
+//			userToken := utils.UserTokenStruct{Token: token, Email: email, ExpireTime: exTime}
+//			userToken = utils.WriteUserToken(userToken)
+//
+//		} else if path == "/user/token/auth" {
+//			email := data["email"].(string)
+//			token := data["token"].(string)
+//			userToken := utils.AuthToken(email, token)
+//			status := http.StatusOK
+//			if userToken.Email == "" {
+//				status = http.StatusUnauthorized
+//			}
+//			rndr.JSON(res, status, userToken)
+//		}
+//	}
+//}
