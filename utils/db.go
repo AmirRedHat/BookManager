@@ -9,19 +9,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"strconv"
+	"time"
 )
 
 const (
-	dbtype                 = "sqlite3"
-	path                   = "./db.sqlite3"
-	write_book_query       = "INSERT INTO book VALUES ($1, $2, $3, $4)"
-	write_user_query       = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
-	write_user_token_query = "INSERT INTO user_token (token, email, time) VALUES (:token, :email, :time)"
-	read_book_query        = "SELECT %s FROM book WHERE book_name='%s'"
-	read_user_query        = "SELECT %s FROM user WHERE id=%d"
-	auth_user_query        = "SELECT %s FROM user WHERE password='%s'"
-	read_all_book_query    = "SELECT %s FROM book"
-	read_all_user_query    = "SELECT %s FROM user"
+	dbtype                  = "sqlite3"
+	path                    = "./db.sqlite3"
+	write_book_query        = "INSERT INTO book VALUES ($1, $2, $3, $4)"
+	write_user_query        = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
+	write_user_token_query  = "INSERT INTO user_token (token, email, time) VALUES (:token, :email, :time)"
+	delete_user_token_query = "DELETE FROM user_token WHERE email='%s'"
+	read_user_token_query   = "SELECT %s FROM user_token WHERE token='%s' AND email='%s'"
+	read_book_query         = "SELECT %s FROM book WHERE book_name='%s'"
+	read_user_query         = "SELECT %s FROM user WHERE id=%d"
+	auth_user_query         = "SELECT %s FROM user WHERE password='%s'"
+	read_all_book_query     = "SELECT %s FROM book"
+	read_all_user_query     = "SELECT %s FROM user"
 )
 
 type Store struct {
@@ -203,7 +206,7 @@ func (s *Store) authPassword(email string, encryptedPassword string) UserStruct 
 	return targetUser
 }
 
-func (s *Store) StoreWriteUserToken(userToken UserTokenStruct) UserTokenStruct {
+func (s *Store) storeWriteUserToken(userToken UserTokenStruct) UserTokenStruct {
 	db := s.returnNewDB()
 	// encrypt token
 	userToken.encryptToken()
@@ -211,34 +214,71 @@ func (s *Store) StoreWriteUserToken(userToken UserTokenStruct) UserTokenStruct {
 	return userToken
 }
 
+func (s *Store) authUserToken(email string, token string) UserTokenStruct {
+	db := s.returnNewDB()
+	query := fmt.Sprintf(read_user_token_query, "*", token, email)
+	results, err := db.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	count := 0
+	var UserToken UserTokenStruct
+	for results.Next() {
+		tempUserToken := UserTokenStruct{}
+		if count > 0 {
+			log.Fatal("internal error : too many token")
+		}
+		count++
+		results.Scan(&tempUserToken.Token, &tempUserToken.Email, &tempUserToken.ExpireTime)
+		UserToken = tempUserToken
+	}
+
+	nowTimestamp := int(time.Now().Unix())
+	if nowTimestamp > UserToken.ExpireTime {
+		return UserTokenStruct{}
+	}
+	return UserToken
+}
+
+func (s *Store) destroyToken(email string) {
+	db := s.returnNewDB()
+	query := fmt.Sprintf(delete_user_token_query, email)
+	db.Query(query)
+}
+
+var store Store
+
 func WriteBook(book BookStruct) {
 	// the middle of saving book
-	store := Store{}
 	store.storeWriteBook(book)
 }
 
 func ReadBook(book_name string) []BookStruct {
 	// the middle of reading book
-	store := Store{}
 	return store.storeReadBook(book_name)
 }
 
 func WriteUser(user UserStruct) {
-	store := Store{}
 	store.storeWriteUser(user)
 }
 
 func ReadUser(pk int) []UserStruct {
-	store := Store{}
 	return store.storeReadUser(pk)
 }
 
 func AuthUser(email string, encryptedPassword string) UserStruct {
-	store := Store{}
 	return store.authPassword(email, encryptedPassword)
 }
 
 func WriteUserToken(userToken UserTokenStruct) UserTokenStruct {
-	store := Store{}
-	return store.StoreWriteUserToken(userToken)
+	return store.storeWriteUserToken(userToken)
+}
+
+func AuthToken(email string, token string) UserTokenStruct {
+	return store.authUserToken(email, token)
+}
+
+func DestroyToken(email string) {
+	store.destroyToken(email)
 }
