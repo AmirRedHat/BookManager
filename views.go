@@ -29,7 +29,12 @@ func BookView(res http.ResponseWriter, req *http.Request) {
 
 	case "GET":
 		book_name := req.URL.Query().Get("book_name")
-		result := utils.ReadBook(book_name)
+		result, err := utils.ReadBook(book_name)
+		if err != nil {
+			responseMessage := make(map[string]interface{})
+			responseMessage["error"] = err.Error()
+			rndr.JSON(res, http.StatusInternalServerError, responseMessage)
+		}
 		rndr.JSON(res, http.StatusOK, result)
 
 	case "POST":
@@ -84,13 +89,28 @@ func UserView(res http.ResponseWriter, req *http.Request) {
 
 		} else if path == "/user/login" {
 
+			//loginTime := time.Now()
 			data := returnData(req)
 			email := data["email"].(string)
+			password := data["password"].(string)
+
+			user, err := utils.AuthPassword(email, password)
+			if user.Email == "" || err != nil {
+				rndr.JSON(res, http.StatusUnauthorized, user)
+				return
+			}
+
 			exTime := int(time.Now().Add(30 * time.Minute).Unix())
 			token := ""
 			userToken := utils.UserTokenStruct{Token: token, Email: email, ExpireTime: exTime}
+			//userTokenCreationTime := time.Now()
+			// removing all active tokens with this email
+			utils.DestroyToken(email)
+			// write new user token in db
 			userToken = utils.WriteUserToken(userToken)
+			//fmt.Println("duration in creating token : ", time.Since(userTokenCreationTime).Seconds())
 			rndr.JSON(res, http.StatusOK, userToken)
+			//fmt.Println("duration in logging in : ", time.Since(loginTime).Seconds())
 
 		} else if path == "/user/logout" {
 			data := returnData(req)

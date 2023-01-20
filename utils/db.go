@@ -3,12 +3,14 @@ package utils
 import (
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,12 +19,12 @@ const (
 	path                    = "./db.sqlite3"
 	write_book_query        = "INSERT INTO book VALUES ($1, $2, $3, $4)"
 	write_user_query        = "INSERT INTO user (username, email, password) VALUES ($1, $2, $3)"
-	write_user_token_query  = "INSERT INTO user_token (token, email, time) VALUES (:token, :email, :time)"
+	write_user_token_query  = "INSERT INTO user_token VALUES ($1, $2, $3)"
 	delete_user_token_query = "DELETE FROM user_token WHERE email='%s'"
 	read_user_token_query   = "SELECT %s FROM user_token WHERE token='%s' AND email='%s'"
 	read_book_query         = "SELECT %s FROM book WHERE book_name='%s'"
 	read_user_query         = "SELECT %s FROM user WHERE id=%d"
-	auth_user_query         = "SELECT %s FROM user WHERE password='%s'"
+	auth_user_query         = "SELECT %s FROM user WHERE email='%s' AND password='%s'"
 	read_all_book_query     = "SELECT %s FROM book"
 	read_all_user_query     = "SELECT %s FROM user"
 )
@@ -78,10 +80,27 @@ func Encrypt(str string) string {
 }
 
 // ---------------------------- UserStruct methods
+func (book *BookStruct) validateBook() bool {
+	if strings.Contains(book.BookName, ";") || strings.Contains(book.BookName, "'") {
+		return false
+	}
+	return true
+}
+
+// ---------------------------- UserStruct methods
 func (user *UserStruct) encryptPassword() {
 	currentPassword := user.Password
 	encryptedPassword := Encrypt(currentPassword)
 	user.Password = encryptedPassword
+}
+
+func (user *UserStruct) validateUser() bool {
+	emailCondition := !strings.Contains(user.Email, "@gmail.com")
+	validateLetters := strings.Contains(user.Email, "'") || strings.Contains(user.Email, ";")
+	if validateLetters && emailCondition {
+		return false
+	}
+	return true
 }
 
 // ---------------------------- UserTokenStruct methods
@@ -106,13 +125,15 @@ func (s *Store) storeWriteBook(book BookStruct) {
 	}
 }
 
-func (s *Store) storeReadBook(book_name string) []BookStruct {
+func (s *Store) storeReadBook(book_name string) ([]BookStruct, error) {
 	s.path = path
 	s.dbtype = dbtype
-	database, dberr := sql.Open(s.dbtype, s.path)
+	book_arr := make([]BookStruct, 0)
+	database, dberr := s.returnDB()
 	if dberr != nil {
 		log.Fatal(dberr)
 	}
+
 	query := fmt.Sprintf(read_all_book_query, "*")
 	if book_name != "all" {
 		query = fmt.Sprintf(read_book_query, "*", book_name)
@@ -120,10 +141,9 @@ func (s *Store) storeReadBook(book_name string) []BookStruct {
 
 	results, dberr := database.Query(query)
 	if dberr != nil {
-		log.Fatal(dberr)
+		return book_arr, dberr
 	}
 
-	book_arr := make([]BookStruct, 0)
 	for results.Next() {
 		temp_book_struct := BookStruct{}
 		scanerr := results.Scan(&temp_book_struct.BookName, &temp_book_struct.Author, &temp_book_struct.Views, &temp_book_struct.Timestamp)
@@ -133,7 +153,9 @@ func (s *Store) storeReadBook(book_name string) []BookStruct {
 		book_arr = append(book_arr, temp_book_struct)
 	}
 
-	return book_arr
+	database.Close()
+	results.Close()
+	return book_arr, nil
 }
 
 func (s *Store) storeWriteUser(user UserStruct) {
@@ -141,6 +163,7 @@ func (s *Store) storeWriteUser(user UserStruct) {
 	s.dbtype = dbtype
 	database, dberr := sql.Open(s.dbtype, s.path)
 	if dberr != nil {
+		fmt.Println("open storeWriteUser")
 		log.Fatal(dberr)
 	}
 	// encrypt user password
@@ -155,6 +178,7 @@ func (s *Store) storeReadUser(pk int) []UserStruct {
 	s.dbtype = dbtype
 	database, dberr := sql.Open(s.dbtype, s.path)
 	if dberr != nil {
+		fmt.Println("open storeReadUser")
 		log.Fatal(dberr)
 	}
 	// creating query
@@ -165,6 +189,7 @@ func (s *Store) storeReadUser(pk int) []UserStruct {
 
 	results, dberr := database.Query(query)
 	if dberr != nil {
+		fmt.Println("query storeReadUser")
 		log.Fatal(dberr)
 	}
 
@@ -175,42 +200,59 @@ func (s *Store) storeReadUser(pk int) []UserStruct {
 		user_arr = append(user_arr, temp_user)
 	}
 
+	database.Close()
+	results.Close()
 	return user_arr
 }
 
-func (s *Store) authPassword(email string, encryptedPassword string) UserStruct {
+func (s *Store) authPassword(email string, password string) (UserStruct, error) {
 	read_fields_str := "id, username, email"
 	s.path = path
 	s.dbtype = dbtype
+	targetUser := UserStruct{}
 	database, dberr := sql.Open(s.dbtype, s.path)
 	if dberr != nil {
+		fmt.Println("authPassword")
 		log.Fatal(dberr)
 	}
 
-	query := fmt.Sprintf(auth_user_query, read_fields_str, encryptedPassword)
+	//queryTime := time.Now()
+	encryptedPassword := Encrypt(password)
+	query := fmt.Sprintf(auth_user_query, read_fields_str, email, encryptedPassword)
 	results, dberr := database.Query(query)
 	if dberr != nil {
-		log.Fatal(dberr)
+		fmt.Println("query error: ", dberr)
+		return targetUser, dberr
 	}
+	//fmt.Println("duration in encrypting and querying : ", time.Since(queryTime).Seconds())
 
-	targetUser := UserStruct{}
-	for results.Next() {
-		tempUser := UserStruct{}
-		results.Scan(&tempUser.ID, &tempUser.Username, &tempUser.Email)
-		if tempUser.Email == email {
-			targetUser = tempUser
-			break
-		}
-	}
+	//scanTime := time.Now()
+	results.Next()
+	results.Scan(&targetUser.ID, &targetUser.Username, &targetUser.Email)
+	//fmt.Println("duration in scanning : ", time.Since(scanTime).Seconds())
 
-	return targetUser
+	database.Close()
+	results.Close()
+
+	return targetUser, nil
 }
 
 func (s *Store) storeWriteUserToken(userToken UserTokenStruct) UserTokenStruct {
-	db := s.returnNewDB()
+	db, err := s.returnDB()
+	if err != nil {
+		log.Fatal(err)
+	}
 	// encrypt token
+	writeTokenTime := time.Now()
 	userToken.encryptToken()
-	db.NamedExec(write_user_token_query, userToken)
+	fmt.Println("duration in encrypting token: ", time.Since(writeTokenTime).Seconds())
+	results, err := db.Exec(write_user_token_query, userToken.Token, userToken.Email, userToken.ExpireTime)
+	if err != nil {
+		fmt.Println(results)
+		log.Fatal(err)
+	}
+	db.Close()
+	fmt.Println("duration in write token : ", time.Since(writeTokenTime).Seconds())
 	return userToken
 }
 
@@ -220,6 +262,8 @@ func (s *Store) authUserToken(email string, token string) UserTokenStruct {
 	results, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
+	} else {
+		db.Close()
 	}
 
 	count := 0
@@ -244,19 +288,31 @@ func (s *Store) authUserToken(email string, token string) UserTokenStruct {
 func (s *Store) destroyToken(email string) {
 	db := s.returnNewDB()
 	query := fmt.Sprintf(delete_user_token_query, email)
-	db.Query(query)
+	fmt.Println("delete : ", query)
+	result, err := db.Exec(query)
+	if err != nil {
+		fmt.Println(result)
+		fmt.Println("destroy token error : ", err)
+		log.Fatal(err)
+	}
+	db.Close()
 }
 
 var store Store
 
 func WriteBook(book BookStruct) {
 	// the middle of saving book
+
 	store.storeWriteBook(book)
 }
 
-func ReadBook(book_name string) []BookStruct {
+func ReadBook(bookName string) ([]BookStruct, error) {
 	// the middle of reading book
-	return store.storeReadBook(book_name)
+	if strings.Contains(bookName, "'") || strings.Contains(bookName, ";") {
+		return []BookStruct{}, errors.New("invalid book name (cannot contain ' or ;)")
+	}
+	return store.storeReadBook(bookName)
+
 }
 
 func WriteUser(user UserStruct) {
@@ -267,7 +323,7 @@ func ReadUser(pk int) []UserStruct {
 	return store.storeReadUser(pk)
 }
 
-func AuthUser(email string, encryptedPassword string) UserStruct {
+func AuthPassword(email string, encryptedPassword string) (UserStruct, error) {
 	return store.authPassword(email, encryptedPassword)
 }
 
